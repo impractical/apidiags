@@ -60,7 +60,7 @@ const (
 type Diagnostic struct {
 	Severity Severity `json:"severity"`
 	Code     Code     `json:"code"`
-	Path     []Steps  `json:"path,omitempty"`
+	Paths    []Steps  `json:"path,omitempty"`
 }
 
 // Steps are a collection of transforms or accesses that point to
