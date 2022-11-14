@@ -1,9 +1,9 @@
 package apidiags
 
 import (
-	"strings"
-
-	"github.com/go-openapi/jsonpointer"
+	"bytes"
+	"encoding/json"
+	"fmt"
 )
 
 // Severity indicates whether the diagnostic is advisory or fatal.
@@ -54,70 +54,184 @@ const (
 	CodeDeprecated Code = "deprecated"
 )
 
-type pointerType string
-
-const (
-	bodyPointer   pointerType = "body"
-	urlPointer    pointerType = "url"
-	headerPointer pointerType = "header"
-)
-
 // Diagnostic supplies information about the API and its status to the caller.
 // It can be used to inform callers about errors and to warn them of future
 // deprecations.
 type Diagnostic struct {
-	Severity Severity  `json:"severity"`
-	Code     Code      `json:"code"`
-	Pointers []Pointer `json:"pointers,omitempty"`
+	Severity Severity `json:"severity"`
+	Code     Code     `json:"code"`
+	Path     []Steps  `json:"path,omitempty"`
 }
 
-// Pointer indicates what part of a request prompted a diagnostic. The Field
-// indicates whether the value was in the body, the URL, or a header. The Path
-// is a JSON pointer to the value in that field that prompted the diagnostic.
-//
-// Pointers are used to give consumers more information about what specifically
-// went wrong, and to help consumers craft UIs that can prompt users to fix the
-// problem.
-type Pointer struct {
-	Field pointerType `json:"field"`
-	Path  string      `json:"path"`
+// Steps are a collection of transforms or accesses that point to
+// ever-more-specific parts of a request.
+type Steps []Step
+
+// AddStep appends a Step to the Steps, pointing to another level of
+// specificity for the request.
+func (s Steps) AddStep(step Step) Steps {
+	s = append(s, step)
+	return s
 }
 
-func buildPointerPath(segments []string) string {
-	if len(segments) < 1 {
-		return ""
+// UnmarshalJSON turns a JSON-encoded set of bytes into Steps.
+func (steps *Steps) UnmarshalJSON(in []byte) error {
+	var genSteps []genericStep
+	dec := json.NewDecoder(bytes.NewBuffer(in))
+	dec.UseNumber()
+	err := dec.Decode(&genSteps)
+	if err != nil {
+		return err
 	}
-	sanitized := make([]string, 0, len(segments))
-	for _, segment := range segments {
-		sanitized = append(sanitized, jsonpointer.Escape(segment))
+	results := make(Steps, 0, len(genSteps))
+	for pos, step := range genSteps {
+		switch step.Kind {
+		case "body":
+			results = results.AddStep(BodyStep{})
+		case "header":
+			if step.Value == nil {
+				return fmt.Errorf("error parsing step %d: no value", pos)
+			}
+			header, ok := (*step.Value).(string)
+			if !ok {
+				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value)
+			}
+			results = results.AddStep(HeaderStep(header))
+		case "url_param":
+			if step.Value == nil {
+				return fmt.Errorf("error parsing step %d: no value", pos)
+			}
+			param, ok := (*step.Value).(string)
+			if !ok {
+				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value)
+			}
+			results = results.AddStep(URLParamStep(param))
+		case "array_index":
+			if step.Value == nil {
+				return fmt.Errorf("error parsing step %d: no value", pos)
+			}
+			index, ok := (*step.Value).(json.Number)
+			if !ok {
+				return fmt.Errorf("error parsing step %d: wanted json.Number, got %T", pos, *step.Value)
+			}
+			idx, err := index.Int64()
+			if err != nil {
+				return fmt.Errorf("error parsing step %d: %w", pos, err)
+			}
+			results = results.AddStep(ArrayIndexStep(idx))
+		case "object_property":
+			if step.Value == nil {
+				return fmt.Errorf("error parsing step %d: no value", pos)
+			}
+			property, ok := (*step.Value).(string)
+			if !ok {
+				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value)
+			}
+			results = results.AddStep(ObjectPropertyStep(property))
+		case "string_index":
+			if step.Value == nil {
+				return fmt.Errorf("error parsing step %d: no value", pos)
+			}
+			index, ok := (*step.Value).(json.Number)
+			if !ok {
+				return fmt.Errorf("error parsing step %d: wanted json.Number, got %T", pos, *step.Value)
+			}
+			idx, err := index.Int64()
+			if err != nil {
+				return fmt.Errorf("error parsing step %d: %w", pos, err)
+			}
+			results = results.AddStep(StringIndexStep(idx))
+		default:
+			return fmt.Errorf("error parsing step %d: unexpected step kind %q with value type %T", pos, step.Kind, step.Value)
+		}
 	}
-	return "/" + strings.Join(sanitized, "/")
+	*steps = results
+	return nil
 }
 
-// NewBodyPointer returns a Pointer to a value in the request body consisting
-// of the passed segments. It will safely escape the segments as necessary.
-func NewBodyPointer(segments ...string) Pointer {
-	return Pointer{
-		Field: bodyPointer,
-		Path:  buildPointerPath(segments),
+// MarshalJSON turns Steps into a JSON-encoded set of bytes.
+func (steps Steps) MarshalJSON() ([]byte, error) {
+	genSteps := make([]genericStep, 0, len(steps))
+	for pos, step := range steps {
+		switch value := step.(type) {
+		case BodyStep:
+			genSteps = append(genSteps, genericStep{Kind: "body"})
+		case HeaderStep:
+			val := any(string(value))
+			genSteps = append(genSteps, genericStep{Kind: "header", Value: &val})
+		case URLParamStep:
+			val := any(string(value))
+			genSteps = append(genSteps, genericStep{Kind: "url_param", Value: &val})
+		case ArrayIndexStep:
+			val := any(int64(value))
+			genSteps = append(genSteps, genericStep{Kind: "array_index", Value: &val})
+		case ObjectPropertyStep:
+			val := any(string(value))
+			genSteps = append(genSteps, genericStep{Kind: "object_property", Value: &val})
+		case StringIndexStep:
+			val := any(int64(value))
+			genSteps = append(genSteps, genericStep{Kind: "string_index", Value: &val})
+		default:
+			return nil, fmt.Errorf("unknown step type %T for step %d", step, pos)
+		}
 	}
+	return json.Marshal(genSteps)
 }
 
-// NewURLPointer returns a Pointer to a value in the request URL consisting of
-// the passed segments. It will safely escape the segments as necessary.
-func NewURLPointer(segments ...string) Pointer {
-	return Pointer{
-		Field: urlPointer,
-		Path:  buildPointerPath(segments),
-	}
+type genericStep struct {
+	Kind  string `json:"kind,omitempty"`
+	Value *any   `json:"value,omitempty"`
 }
 
-// NewHeaderPointer returns a Pointer to a value in the request headers
-// consisting of the passed segments. It will safely escape the segments as
-// necessary.
-func NewHeaderPointer(segments ...string) Pointer {
-	return Pointer{
-		Field: headerPointer,
-		Path:  buildPointerPath(segments),
-	}
+// Step is a single transform or access that points to a more specific part of
+// the request. It should only ever be created by using the *Step functions.
+type Step interface {
+	step()
+}
+
+// BodyStep is a Step that selects the body of a request.
+type BodyStep struct{}
+
+func (BodyStep) step() {}
+
+// HeaderStep is a Step that specifies a single header on a request.
+type HeaderStep string
+
+func (HeaderStep) step() {}
+
+// URLParamStep is a Step that specifies a single URL parameter on a request.
+type URLParamStep string
+
+func (URLParamStep) step() {}
+
+// ArrayIndexStep is a Step that specifies a single element within an array.
+type ArrayIndexStep int64
+
+func (ArrayIndexStep) step() {}
+
+// ObjectPropertyStep is a Step that specifies a single property within an
+// object.
+type ObjectPropertyStep string
+
+func (ObjectPropertyStep) step() {}
+
+// StringIndexStep is a Step that specifies a single character within a string.
+type StringIndexStep int64
+
+func (StringIndexStep) step() {}
+
+// BodyPath returns Steps that point to the body of the request.
+func BodyPath() Steps {
+	return Steps{BodyStep{}}
+}
+
+// HeaderPath returns Steps that point to the specified header of the request.
+func HeaderPath(header string) Steps {
+	return Steps{HeaderStep(header)}
+}
+
+// URLParamPath returns steps that point to the specified URL parameter of the
+// request.
+func URLParamPath(param string) Steps {
+	return Steps{URLParamStep(param)}
 }
