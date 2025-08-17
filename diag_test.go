@@ -51,23 +51,21 @@ func TestMarshalJSON(t *testing.T) {
 		},
 	}
 
-	for name, tc := range cases {
-		name, tc := name, tc
-
+	for name, test := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := json.Marshal(tc.steps)
+			result, err := json.Marshal(test.steps)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err)
 			}
 			opts := jsondiff.DefaultConsoleOptions()
-			match, diff := jsondiff.Compare([]byte(tc.expected), result, &opts)
+			match, diff := jsondiff.Compare([]byte(test.expected), result, &opts)
 			if match != jsondiff.FullMatch {
 				t.Errorf("Unexpected result: %s", diff)
 			}
 			if match > jsondiff.NoMatch {
-				t.Logf("first argument: %s", tc.expected)
+				t.Logf("first argument: %s", test.expected)
 				t.Logf("second argument: %s", result)
 			}
 		})
@@ -118,18 +116,16 @@ func TestUnmarshalJSON(t *testing.T) {
 		},
 	}
 
-	for name, tc := range cases {
-		name, tc := name, tc
-
+	for name, test := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			var result Steps
-			err := json.Unmarshal([]byte(tc.input), &result)
+			err := json.Unmarshal([]byte(test.input), &result)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err)
 			}
-			if diff := cmp.Diff(tc.expected, result); diff != "" {
+			if diff := cmp.Diff(test.expected, result); diff != "" {
 				t.Fatalf("unexpected results (-wanted, +got): %s", diff)
 			}
 		})

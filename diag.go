@@ -69,9 +69,9 @@ type Steps []Step
 
 // AddStep appends a Step to the Steps, pointing to another level of
 // specificity for the request.
-func (s Steps) AddStep(step Step) Steps {
-	s = append(s, step)
-	return s
+func (steps Steps) AddStep(step Step) Steps {
+	steps = append(steps, step)
+	return steps
 }
 
 // UnmarshalJSON turns a JSON-encoded set of bytes into Steps.
