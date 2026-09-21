@@ -52,6 +52,9 @@ const (
 	// CodeDeprecated indicates that the field or value is deprecated and
 	// may be removed or have its behavior changed in a future API update.
 	CodeDeprecated Code = "deprecated"
+	// CodeRateLimited indicates that the request was refused because it
+	// exceeded a rate limit.
+	CodeRateLimited = "rate_limited"
 )
 
 // Diagnostic supplies information about the API and its status to the caller.
@@ -90,29 +93,29 @@ func (steps *Steps) UnmarshalJSON(in []byte) error {
 			results = results.AddStep(BodyStep{})
 		case "header":
 			if step.Value == nil {
-				return fmt.Errorf("error parsing step %d: no value", pos)
+				return fmt.Errorf("error parsing step %d: no value", pos) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			header, ok := (*step.Value).(string)
 			if !ok {
-				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value)
+				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			results = results.AddStep(HeaderStep(header))
 		case "url_param":
 			if step.Value == nil {
-				return fmt.Errorf("error parsing step %d: no value", pos)
+				return fmt.Errorf("error parsing step %d: no value", pos) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			param, ok := (*step.Value).(string)
 			if !ok {
-				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value)
+				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			results = results.AddStep(URLParamStep(param))
 		case "array_index":
 			if step.Value == nil {
-				return fmt.Errorf("error parsing step %d: no value", pos)
+				return fmt.Errorf("error parsing step %d: no value", pos) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			index, ok := (*step.Value).(json.Number)
 			if !ok {
-				return fmt.Errorf("error parsing step %d: wanted json.Number, got %T", pos, *step.Value)
+				return fmt.Errorf("error parsing step %d: wanted json.Number, got %T", pos, *step.Value) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			idx, err := index.Int64()
 			if err != nil {
@@ -121,20 +124,20 @@ func (steps *Steps) UnmarshalJSON(in []byte) error {
 			results = results.AddStep(ArrayIndexStep(idx))
 		case "object_property":
 			if step.Value == nil {
-				return fmt.Errorf("error parsing step %d: no value", pos)
+				return fmt.Errorf("error parsing step %d: no value", pos) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			property, ok := (*step.Value).(string)
 			if !ok {
-				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value)
+				return fmt.Errorf("error parsing step %d: wanted string, got %T", pos, *step.Value) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			results = results.AddStep(ObjectPropertyStep(property))
 		case "string_index":
 			if step.Value == nil {
-				return fmt.Errorf("error parsing step %d: no value", pos)
+				return fmt.Errorf("error parsing step %d: no value", pos) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			index, ok := (*step.Value).(json.Number)
 			if !ok {
-				return fmt.Errorf("error parsing step %d: wanted json.Number, got %T", pos, *step.Value)
+				return fmt.Errorf("error parsing step %d: wanted json.Number, got %T", pos, *step.Value) //nolint:err113 // there is no handling this error, it's for logging only
 			}
 			idx, err := index.Int64()
 			if err != nil {
@@ -142,7 +145,7 @@ func (steps *Steps) UnmarshalJSON(in []byte) error {
 			}
 			results = results.AddStep(StringIndexStep(idx))
 		default:
-			return fmt.Errorf("error parsing step %d: unexpected step kind %q with value type %T", pos, step.Kind, step.Value)
+			return fmt.Errorf("error parsing step %d: unexpected step kind %q with value type %T", pos, step.Kind, step.Value) //nolint:err113 // there is no handling this error, it's for logging only
 		}
 	}
 	*steps = results
@@ -172,7 +175,7 @@ func (steps Steps) MarshalJSON() ([]byte, error) {
 			val := any(int64(value))
 			genSteps = append(genSteps, genericStep{Kind: "string_index", Value: &val})
 		default:
-			return nil, fmt.Errorf("unknown step type %T for step %d", step, pos)
+			return nil, fmt.Errorf("unknown step type %T for step %d", step, pos) //nolint:err113 // there is no handling this error, it's for logging only
 		}
 	}
 	return json.Marshal(genSteps)
